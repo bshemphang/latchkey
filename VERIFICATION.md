@@ -26,7 +26,7 @@ Running log of what was built, tested, and verified. Newest first.
 - `npm run build` (`tsc -b && vite build`): clean, dist 465 kB JS / 140 kB gzip.
 - `npx oxlint`: **0 warnings, 0 errors**.
 - Render check (headless Chromium against `vite preview`, `scripts/render-check.cjs`): hero renders; clean sample → extraction card correct (role, company, salary, deadline, skill chips), scam verdict "Looks clean", On-device badges with latency, tailor section works (resume bullets render); **zero app console errors**. Screenshots: `/tmp/latchkey-hero.png`, `/tmp/latchkey-results.png`.
-- No secrets in the repo: `.env` is gitignored, `.env.example` holds placeholders only, sample profile and postings are fictional, no real PII.
+- Repo live: **https://github.com/bshemphang/latchkey** (public, Apache-2.0 detected, 7 topics, default branch `main`). First commit `60ce51d`, local HEAD == remote HEAD. No secrets in tracked files (grep for key/token patterns clean).
 
 ### Fixes made during the day
 - Firebase SDK v13 exposes AI Logic as `firebase/ai`, not `firebase/ai-logic` (the plan's path does not exist in v13). Verified against the installed package's exports and type definitions: `getAI`, `getGenerativeModel`, `GoogleAIBackend`, `InferenceMode`, `InferenceSource`, `GenerativeModel.initializeDeviceModel`, `response.inferenceSource`, `Schema` helpers. `HybridParams` requires `mode` and takes `inCloudParams: { model }`; `Part` objects need a `type` discriminator (`{ type: 'text', text }`, `{ type: 'inlineData', ... }`).
