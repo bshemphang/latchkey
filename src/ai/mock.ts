@@ -188,7 +188,7 @@ export async function runMockTask<T>(
   const started = performance.now();
   const source: InferenceSourceLabel =
     mode === 'on-device' ? 'mock-on-device' : 'mock-cloud';
-  const model = mode === 'on-device' ? 'gemini-nano (demo)' : 'gemini-2.5-flash (demo)';
+  const model = mode === 'on-device' ? 'gemini-nano (demo)' : 'gemini-3.8-flash (demo)';
   await sleep(mode === 'on-device' ? jitter(280, 850) : jitter(900, 2100));
 
   let data: unknown;

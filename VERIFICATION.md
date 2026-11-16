@@ -2,6 +2,44 @@
 
 Running log of what was built, tested, and verified. Newest first.
 
+## 2026-11-17 ~01:05 IST — Day 2 (Nov 18 schedule, done early): real Firebase AI Logic wiring
+
+**Config landed:** project `latchkey-hybrid-ai`, web config + App Check debug token in `~/workspace/latchkey/.env.local` only (gitignored, never committed). Devpost: registered for #BuildHybridAI 2026 as nic-shemphang (confirmed 2026-11-17 ~00:55 IST).
+
+### What was wired
+- **App Check debug token (`src/appcheck.ts`):** new `resolveDebugToken()` — in DEV it uses `VITE_FIREBASE_APPCHECK_DEBUG_TOKEN` from `.env.local` when present, else `true` (SDK prints a fresh token). Outside DEV it returns `undefined`, so the token value is never referenced by the production build. Verified: `grep -c` for the token in `dist/` = **0 matches** after every build. The debug token never ships in the public bundle.
+- **Real engine path is live:** with `.env.local` present, `isFirebaseConfigured()` is true and `HybridEngine.generate()` takes the real Firebase AI Logic path (no mock). The header pill shows "Firebase connected". The mock layer remains only as the fallback when Firebase is unconfigured.
+- **Cloud model switched: `gemini-2.5-flash` → `gemini-3.8-flash`.** The attested API call returned HTTP 404: "This model models/gemini-2.5-flash is no longer available to new users. Please update your code to use models/gemini-3.8-flash." Switched everywhere (code default, mock label, engine doc comment, README, both smoke scripts). No `gemini-2.5-flash` reference remains in the repo.
+- **Transient-error retry (`src/ai/engine.ts`):** `isTransientCloudError()` + `generateWithRetry()` — up to 3 attempts with 2s/4s backoff on HTTP 500/502/503/504, "high demand", "Deadline expired". Auth (401/403), App Check, and 404 errors fail fast, never retried.
+- **Friendly errors (`src/ui/JobAnalyzer.tsx`):** network failures now show "Couldn't reach the AI service. Check your connection and try again." instead of the raw SDK message.
+- **Render check (`scripts/render-check.cjs`):** now uses the persistent browser profile (`~/workspace/.browser-profile`) and is environment-aware (demo vs configured). Checks fixed to avoid false positives from the pasted sample text (extraction = "Must-have skills", scam = "Looks clean", badge = "On-device" + latency pill). Console errors are classified: VM-only font failures vs SDK fetch noise vs real problems.
+- **`.env.example`:** documents the debug-token and reCAPTCHA variables (empty values, dev-only notes).
+
+### Verified
+- `npm test`: **33 passed, 0 failed** (25 Day 1 + 8 new: App Check token 2, Firebase config 2, engine retry 4; 7 test files).
+- `npm run build` (`tsc -b && vite build`): clean, dist 466 kB JS / 141 kB gzip.
+- `npx oxlint`: **0 warnings, 0 errors**.
+- **Debug token in dist: 0 matches** (grep count, value never printed). The Firebase web API key appears once in the bundle — expected, it is public by design.
+- **Smoke test, App Check exchange (`scripts/smoke-appcheck.mjs`): PASS.** Debug token exchanged for an attestation token, HTTP 200, every time (4 runs). Proves the token is registered in the Firebase console and App Check enforcement is on.
+- **Smoke test, attested AI call: BLOCKED by transient model overload, not by wiring.** The attested `generateContent` call to `gemini-3.8-flash` returned HTTP 500 "This model is currently experiencing high demand" (3 of 4 attempts) and HTTP 503 "Deadline expired" (1 of 4). The model name is valid (no 404), the attestation is accepted (no 401) — Google's new-model capacity is the only blocker. Retry later; the engine now retries these automatically.
+- **Smoke test, unattested SDK call (`scripts/smoke-real-ai.mjs`): 401 as expected.** Without an App Check token the SDK call is rejected ("Firebase App Check token is invalid"). This is the correct enforcement behaviour, not a failure.
+- **Render check (configured mode, `vite preview`):** hero renders; header pill "Firebase connected"; Analyse attempts the real `gemini-3.8-flash` endpoint (visible in the error text) and fails gracefully with the friendly message, no crash. Console errors: 7 network (Google Fonts, VM-only — headless Chromium has no internet), 1 SDK fetch noise (VM-only), **0 other**. Load-only probe confirms the fonts are the only load-time errors.
+- **No secrets in the repo:** `git status` clean of `.env.local` / `.firebaserc` (both gitignored); `git ls-files` shows only `.env.example`; debug-token grep across tracked files = 0.
+
+### Hosting deploy — BLOCKED on his login (logged to TAKEOVER_NEEDED.md)
+- Firebase CLI installed (v15.36.0), `.firebaserc` created locally (project `latchkey-hybrid-ai`, gitignored), build ready.
+- `firebase deploy --only hosting` fails: "Failed to authenticate, have you run firebase login?" / "No authorized accounts, run firebase login". **His step:** run `firebase login` on his machine (Google account owning the project), then the deploy runs from `~/workspace/latchkey`. **No hosted demo URL yet.**
+- **reCAPTCHA v3 site key is missing** (`VITE_RECAPTCHA_V3_SITE_KEY` is empty in `.env.local`). **His step:** register it in the Firebase console (App Check > reCAPTCHA v3) and hand over only the site key. Without it the hosted demo cannot attest App Check.
+
+### Judges prep (due before Nov 30)
+- **README:** architecture section added — Mermaid flowchart (user → privacy router → Nano on-device vs Gemini 3.8 Flash cloud → badges), routing table (task → where it runs → why), fallbacks, full request flow, and the model-switch note. Test count updated to 33.
+- **Demo script:** `~/workspace/DELIVERABLES/buildhybridai/DEMO_SCRIPT.md` — 2:50 script with shot-by-shot narration, shot list, pre-recording checklist (Chrome 139+, Nano flag + model download, sample data only, no PII), failure fallbacks, and the YouTube upload plan. Recording is his step, Nov 25 on his laptop.
+
+### Known limitations (environmental, not app bugs)
+- The on-device (Gemini Nano) path has not run against a real model yet: this VM has no Chrome with Nano and headless Chromium has no internet. That is the Nov 23 test-matrix work plus his Nov 25 video step.
+- The cloud model (`gemini-3.8-flash`) was overloaded at test time (HTTP 500/503, 4 attempts over ~5 min). The engine retries these; a later re-run of `scripts/smoke-appcheck.mjs` should print SMOKE-APPCHECK: PASS when capacity frees up.
+- Headless Chromium in this VM cannot reach the internet, so Google Fonts fail in the render check (fallback fonts used) and the real AI call fails there. On the hosted site both work normally.
+
 ## 2026-11-17 ~00:47 IST — Nov 17 scaffold (Day 1 of the plan)
 
 **Exit criteria: repo live, app shell renders, mock loop works — MET.**

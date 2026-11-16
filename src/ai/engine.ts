@@ -11,7 +11,7 @@
  *   const ai = getAI(app, { backend: new GoogleAIBackend() })
  *   const model = getGenerativeModel(ai, {
  *     mode: InferenceMode.PREFER_ON_DEVICE,   // or PREFER_IN_CLOUD
- *     inCloudParams: { model: 'gemini-2.5-flash' },
+ *     inCloudParams: { model: 'gemini-3.8-flash' },
  *   })
  *   await model.initializeDeviceModel(onProgress)   // after a user gesture
  *   const result = await model.generateContent(prompt)
@@ -82,6 +82,21 @@ function parseJsonLoose<T>(text: string): T {
   const end = cleaned.lastIndexOf('}');
   if (start === -1 || end === -1) throw new Error('No JSON object in response.');
   return JSON.parse(cleaned.slice(start, end + 1)) as T;
+}
+
+/**
+ * True for transient cloud failures (capacity spikes, deadlines) that are
+ * worth retrying. Auth, App Check, and model-availability errors are NOT
+ * transient: retrying them only burns quota. The SDK reports the HTTP
+ * status in brackets, e.g. "[500 Internal Server Error] This model is
+ * currently experiencing high demand."
+ */
+export function isTransientCloudError(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error ?? '');
+  if (/\[400|\[401|\[403|\[404/.test(message)) return false;
+  return /\[500|\[502|\[503|\[504|high demand|Deadline expired|overloaded|temporarily unavailable/i.test(
+    message,
+  );
 }
 
 export class HybridEngine {
@@ -222,6 +237,43 @@ export class HybridEngine {
   }
 
   /**
+   * One generateContent call, retried (max 3 attempts, 2s then 4s backoff)
+   * when the cloud reports a transient capacity/deadline error. The new
+   * cloud model is capacity-constrained at launch, so a single spike must
+   * not fail the whole analysis. Auth/App Check/404 errors throw at once.
+   */
+  private async generateWithRetry(
+    model: GenerativeModel,
+    task: AITask,
+    input: GenerateInput,
+    prompt: string,
+  ) {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        if (task === 'extract' && input.imageDataUrl) {
+          const [header, data] = input.imageDataUrl.split(',');
+          const mimeType =
+            header?.match(/data:(.*);base64/)?.[1] ?? 'image/jpeg';
+          return await model.generateContent([
+            { type: 'text', text: prompt },
+            { type: 'inlineData', inlineData: { mimeType, data: data ?? '' } },
+          ]);
+        }
+        return await model.generateContent(prompt);
+      } catch (e) {
+        lastError = e;
+        if (attempt < 2 && isTransientCloudError(e)) {
+          await new Promise((r) => setTimeout(r, 2000 * (attempt + 1)));
+          continue;
+        }
+        throw e;
+      }
+    }
+    throw lastError;
+  }
+
+  /**
    * Run one single-turn task. Routes by policy, then runs the real Firebase
    * AI Logic call when configured, otherwise the mock layer. The returned
    * result always says where it ran and how long it took.
@@ -261,17 +313,7 @@ export class HybridEngine {
       await this.ensureDeviceModel();
     }
     const prompt = this.promptFor(task, input);
-    let result;
-    if (task === 'extract' && input.imageDataUrl) {
-      const [header, data] = input.imageDataUrl.split(',');
-      const mimeType = header?.match(/data:(.*);base64/)?.[1] ?? 'image/jpeg';
-      result = await model.generateContent([
-        { type: 'text', text: prompt },
-        { type: 'inlineData', inlineData: { mimeType, data: data ?? '' } },
-      ]);
-    } else {
-      result = await model.generateContent(prompt);
-    }
+    const result = await this.generateWithRetry(model, task, input, prompt);
     const text = result.response.text();
     const rawSource = result.response.inferenceSource;
     const source: InferenceSourceLabel =

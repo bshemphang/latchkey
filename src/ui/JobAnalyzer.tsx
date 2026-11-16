@@ -53,6 +53,20 @@ import { useEngineStatus } from './useEngineStatus';
 
 type Running = 'analyze' | 'bullets' | 'note' | 'deep' | 'interview' | 'letter' | null;
 
+/**
+ * Turn SDK errors into something a user can act on. Network failures mean
+ * the AI service could not be reached at all (offline, or the browser has
+ * no route to it); anything else is shown as the SDK reported it.
+ */
+function friendlyError(e: unknown): string {
+  const message =
+    e instanceof Error ? e.message : 'Analysis failed. Please try again.';
+  if (/Failed to fetch|NetworkError|ERR_NETWORK|network request failed/i.test(message)) {
+    return "Couldn't reach the AI service. Check your connection and try again.";
+  }
+  return message;
+}
+
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
   return (
@@ -151,7 +165,7 @@ export function JobAnalyzer({
       setInterview(null);
       setLetter(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Analysis failed. Please try again.');
+      setError(friendlyError(e));
     } finally {
       setRunning(null);
       refresh();
@@ -174,7 +188,7 @@ export function JobAnalyzer({
       });
       setter(result);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'That feature failed. Please try again.');
+      setError(friendlyError(e));
     } finally {
       setRunning(null);
       refresh();

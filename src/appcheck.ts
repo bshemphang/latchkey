@@ -20,15 +20,34 @@ declare global {
 
 let initialised = false;
 
+/**
+ * The App Check debug token for the dev provider.
+ *
+ * Development only: when the registered debug token is present in
+ * `.env.local` (VITE_FIREBASE_APPCHECK_DEBUG_TOKEN) it is used; otherwise
+ * `true` makes the SDK print a fresh token to the console for registration
+ * in the Firebase console. Returns undefined outside DEV, so the token
+ * value is never referenced by the production build (and never ships in
+ * the deployed bundle — verify with a grep of dist/ after every build).
+ */
+export function resolveDebugToken(): string | true | undefined {
+  if (!import.meta.env.DEV) return undefined;
+  const token = import.meta.env.VITE_FIREBASE_APPCHECK_DEBUG_TOKEN as
+    | string
+    | undefined;
+  return token || true;
+}
+
 export function initAppCheck(): void {
   if (initialised || !isFirebaseConfigured()) return;
   const app = getFirebaseApp();
   if (!app) return;
   try {
-    if (import.meta.env.DEV) {
-      // Debug provider: the SDK prints a debug token to the console on first
-      // use. Register that token in the Firebase console; never commit it.
-      window.FIREBASE_APPCHECK_DEBUG_TOKEN = true;
+    const debugToken = resolveDebugToken();
+    if (debugToken !== undefined) {
+      // Debug provider: the SDK uses this token instead of reCAPTCHA.
+      // Register the token in the Firebase console; never commit it.
+      window.FIREBASE_APPCHECK_DEBUG_TOKEN = debugToken;
     }
     const siteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY as
       | string

@@ -28,7 +28,7 @@ export interface AIResult<T> {
   source: InferenceSourceLabel;
   /** Wall-clock time of the call, in milliseconds. */
   latencyMs: number;
-  /** Model name reported by the engine (e.g. gemini-nano, gemini-2.5-flash). */
+  /** Model name reported by the engine (e.g. gemini-nano, gemini-3.8-flash). */
   model: string;
   /** True when on-device was preferred but the call fell back to the cloud. */
   fallback?: boolean;
@@ -116,7 +116,7 @@ export interface RoutingThresholds {
 
 export const DEFAULT_THRESHOLDS: RoutingThresholds = {
   cloudMinChars: 6000,
-  cloudModel: 'gemini-2.5-flash',
+  cloudModel: 'gemini-3.8-flash',
   deviceModel: 'gemini-nano',
   photoUploadEnabled: true,
 };
