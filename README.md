@@ -121,7 +121,7 @@ The live project is `latchkey-hybrid-ai` (Gemini Developer API backend, no billi
 2. Run the AI Logic guided setup with the **Gemini Developer API** backend (no billing).
 3. Register the web app and enable App Check.
 4. Copy `.env.example` to `.env.local` and fill in the web config values plus the App Check debug token (App Check > Manage debug tokens).
-5. For the production build, register a **reCAPTCHA v3 site key** in the Firebase console (App Check > reCAPTCHA v3) and set `VITE_RECAPTCHA_V3_SITE_KEY` in `.env.local`. Without it the hosted demo cannot attest App Check; the debug token is dev-only and never ships in the production bundle.
+5. For the production build, register a **reCAPTCHA Enterprise site key** in the Firebase console (App Check > reCAPTCHA Enterprise) and set `VITE_RECAPTCHA_V3_SITE_KEY` in `.env.local`. Without it the hosted demo cannot attest App Check; the debug token is dev-only and never ships in the production bundle.
 6. Deploy: `npm run build && firebase deploy --only hosting`.
 
 With no `.env.local`, the app runs in demo mode against the mock layer.

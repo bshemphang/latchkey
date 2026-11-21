@@ -2,6 +2,18 @@
 
 Running log of what was built, tested, and verified. Newest first.
 
+## 2026-11-21 ~20:45 IST - App Check switched to reCAPTCHA Enterprise, site key set
+
+**What changed:** reCAPTCHA Classic is deprecated, so the key was created in Google Cloud Console (Security > Fraud Defense) as a reCAPTCHA Enterprise key in the `latchkey-hybrid-ai` project. The first key was created in the wrong GCP project ("My Maps Project") and was discarded; the replacement key was created in the right project. `src/appcheck.ts` now uses `ReCaptchaEnterpriseProvider` (verified present in the installed Firebase SDK v13) instead of `ReCaptchaV3Provider`; the env var name `VITE_RECAPTCHA_V3_SITE_KEY` is unchanged and now holds the Enterprise site key in `.env.local` (gitignored, never committed). README setup step updated to Enterprise.
+
+**His remaining step:** in the Firebase console, App Check > Apps > web app, pick the reCAPTCHA Enterprise provider and select the new key, so the console side matches the app. That unblocks the hosted demo URL attesting App Check; it does not block the Nov 25 demo video or the Nov 29 submission.
+
+### Verified
+- `npm test`: **56 passed, 0 failed** (unchanged count, no test changes needed).
+- `npm run build` (`tsc -b && vite build`): clean.
+- `npx oxlint`: **0 warnings, 0 errors**.
+- Debug-token string in `dist/`: 0 matches. No new em dashes in edited lines.
+
 ## 2026-11-21 — Hermes review fixes (10 findings + minors)
 
 **Review:** `~/workspace/DELIVERABLES/buildhybridai/latchkey-hermes-review.md`. All 10 findings fixed, plus the minors except the 2 s status poll (harmless churn, left as-is).
@@ -26,7 +38,7 @@ Running log of what was built, tested, and verified. Newest first.
 - Debug-token string in `dist/`: 0 matches. No new em dashes in edited lines.
 
 ### Still his steps
-- **reCAPTCHA v3 site key** for the hosted demo (App Check in production). The app now shows a banner and a clear error without it, but the key itself must come from him.
+- **reCAPTCHA site key** for the hosted demo (App Check in production). The app now shows a banner and a clear error without it, but the key itself must come from him. (Resolved 2026-11-21 ~20:45 IST, see entry above: Enterprise provider, site key set in `.env.local`; his remaining step is selecting the key in the Firebase console.)
 - Demo video Nov 25 on his laptop (real Chrome 139+ with Nano); Devpost submission Nov 29 (his click).
 
 ## 2026-11-17 ~01:05 IST — Day 2 (Nov 18 schedule, done early): real Firebase AI Logic wiring
@@ -56,7 +68,7 @@ Running log of what was built, tested, and verified. Newest first.
 ### Hosting deploy — BLOCKED on his login (logged to TAKEOVER_NEEDED.md)
 - Firebase CLI installed (v15.36.0), `.firebaserc` created locally (project `latchkey-hybrid-ai`, gitignored), build ready.
 - `firebase deploy --only hosting` fails: "Failed to authenticate, have you run firebase login?" / "No authorized accounts, run firebase login". **His step:** run `firebase login` on his machine (Google account owning the project), then the deploy runs from `~/workspace/latchkey`. **No hosted demo URL yet.**
-- **reCAPTCHA v3 site key is missing** (`VITE_RECAPTCHA_V3_SITE_KEY` is empty in `.env.local`). **His step:** register it in the Firebase console (App Check > reCAPTCHA v3) and hand over only the site key. Without it the hosted demo cannot attest App Check.
+- **reCAPTCHA site key is now set** (`VITE_RECAPTCHA_V3_SITE_KEY` filled in `.env.local` 2026-11-21 ~20:45 IST; provider switched to reCAPTCHA Enterprise). **His remaining step:** select the Enterprise key in the Firebase console (App Check > Apps > web app). Without that the hosted demo cannot attest App Check.
 
 ### Judges prep (due before Nov 30)
 - **README:** architecture section added — Mermaid flowchart (user → privacy router → Nano on-device vs Gemini 3.8 Flash cloud → badges), routing table (task → where it runs → why), fallbacks, full request flow, and the model-switch note. Test count updated to 33.

@@ -4,12 +4,15 @@
  * Firebase AI Logic requires App Check. In development the debug provider is
  * used (the SDK logs a debug token to the console, which is registered in the
  * Firebase console; the token itself is never committed). In production the
- * reCAPTCHA v3 provider is used, with the site key from the environment.
+ * reCAPTCHA Enterprise provider is used, with the site key from the environment.
  *
  * Until the Firebase project is wired this is a no-op.
  */
 
-import { initializeAppCheck, ReCaptchaV3Provider } from 'firebase/app-check';
+import {
+  initializeAppCheck,
+  ReCaptchaEnterpriseProvider,
+} from 'firebase/app-check';
 import { getFirebaseApp, isFirebaseConfigured } from './config/firebase';
 
 declare global {
@@ -74,12 +77,12 @@ export function initAppCheck(): void {
       // every AI call then fails with a raw 401/403. Say so loudly instead.
       appCheckState = 'missing-site-key';
       console.warn(
-        'Latchkey: VITE_RECAPTCHA_V3_SITE_KEY is not set, so App Check is disabled in production and AI calls may be rejected. Add the reCAPTCHA v3 site key to finish setup.',
+        'Latchkey: VITE_RECAPTCHA_V3_SITE_KEY is not set, so App Check is disabled in production and AI calls may be rejected. Add the reCAPTCHA Enterprise site key to finish setup.',
       );
       return;
     }
     initializeAppCheck(app, {
-      provider: new ReCaptchaV3Provider(siteKey ?? 'debug'),
+      provider: new ReCaptchaEnterpriseProvider(siteKey ?? 'debug'),
       isTokenAutoRefreshEnabled: true,
     });
     initialised = true;
