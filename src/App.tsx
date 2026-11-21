@@ -15,6 +15,7 @@ import {
   ListChecks,
   Lock,
   LogIn,
+  ShieldAlert,
   ShieldCheck,
   User,
   Wifi,
@@ -23,7 +24,7 @@ import {
 import { ensureSession, signInWithGoogle, type Session } from './auth';
 import { initAppCheck } from './appcheck';
 import { loadProfile } from './store/profile';
-import { loadApplications } from './store/tracker';
+import { loadApplications, subscribeApplications } from './store/tracker';
 import type { CandidateProfile } from './ai/types';
 import { JobAnalyzer } from './ui/JobAnalyzer';
 import { Tracker } from './ui/Tracker';
@@ -47,6 +48,12 @@ export default function App() {
     ensureSession()
       .then(setSession)
       .catch(() => setSession(null));
+    // Live tracker board: Firestore pushes changes into the cache and this
+    // bumps the board key so Tracker reloads. No-op in demo mode.
+    const unsubscribe = subscribeApplications(() =>
+      setTrackerKey((k) => k + 1),
+    );
+    return unsubscribe;
   }, []);
 
   const trackerCount = loadApplications().length;
@@ -131,6 +138,17 @@ export default function App() {
       </header>
 
       <main className="mx-auto max-w-6xl px-4 pb-16">
+        {/* App Check is configured but the reCAPTCHA site key is missing. */}
+        {status.configured && !import.meta.env.DEV && status.appCheckMissingKey && (
+          <div className="mt-4 flex items-start gap-2 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-900">
+            <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0" />
+            <p>
+              <span className="font-semibold">App Check is not set up:</span>{' '}
+              the reCAPTCHA v3 site key is missing, so AI calls may be
+              rejected. Add VITE_RECAPTCHA_V3_SITE_KEY to finish setup.
+            </p>
+          </div>
+        )}
         {/* Hero */}
         <section className="py-10 sm:py-14">
           <p className="text-xs font-bold uppercase tracking-[0.18em] text-amber-700">
@@ -247,9 +265,11 @@ export default function App() {
                 Private by routing
               </h3>
               <p className="mt-1 text-sm leading-relaxed text-stone-600">
-                If Nano is unavailable, on-device tasks fall back to the cloud
-                and the badge flips so you can see it. If you are offline, the
-                cloud features pause and the on-device ones keep working.
+                If Nano is unavailable, posting-only checks fall back to the
+                cloud and the badge flips so you can see it. Anything that
+                uses your profile stays blocked until you allow cloud use. If
+                you are offline, the cloud features pause and the on-device
+                ones keep working.
               </p>
             </Card>
           </div>

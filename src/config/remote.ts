@@ -13,6 +13,30 @@ import { DEFAULT_THRESHOLDS, type RoutingThresholds } from '../ai/types';
 let cached: RoutingThresholds | null = null;
 let fetched = false;
 
+/**
+ * Parse raw Remote Config string values into thresholds. A non-numeric or
+ * non-finite value falls back to the matching default instead of poisoning
+ * the routing math (a NaN cloudMinChars makes `jdLength > NaN` false
+ * forever, so long postings never route to the cloud).
+ */
+export function parseThresholds(values: {
+  cloudMinChars?: string;
+  cloudModel?: string;
+  deviceModel?: string;
+  photoUploadEnabled?: string;
+}): RoutingThresholds {
+  const minChars = Number(values.cloudMinChars);
+  return {
+    cloudMinChars:
+      Number.isFinite(minChars) && minChars > 0
+        ? minChars
+        : DEFAULT_THRESHOLDS.cloudMinChars,
+    cloudModel: values.cloudModel?.trim() || DEFAULT_THRESHOLDS.cloudModel,
+    deviceModel: values.deviceModel?.trim() || DEFAULT_THRESHOLDS.deviceModel,
+    photoUploadEnabled: values.photoUploadEnabled !== 'false',
+  };
+}
+
 /** Current thresholds: Remote Config values when available, else defaults. */
 export async function getThresholds(): Promise<RoutingThresholds> {
   if (cached) return cached;
@@ -32,19 +56,12 @@ export async function getThresholds(): Promise<RoutingThresholds> {
       await fetchAndActivate(rc);
       fetched = true;
     }
-    cached = {
-      cloudMinChars: Number(
-        getValue(rc, 'cloud_min_chars').asString() ||
-          DEFAULT_THRESHOLDS.cloudMinChars,
-      ),
-      cloudModel:
-        getValue(rc, 'cloud_model').asString() || DEFAULT_THRESHOLDS.cloudModel,
-      deviceModel:
-        getValue(rc, 'device_model').asString() ||
-        DEFAULT_THRESHOLDS.deviceModel,
-      photoUploadEnabled:
-        getValue(rc, 'photo_upload_enabled').asString() !== 'false',
-    };
+    cached = parseThresholds({
+      cloudMinChars: getValue(rc, 'cloud_min_chars').asString(),
+      cloudModel: getValue(rc, 'cloud_model').asString(),
+      deviceModel: getValue(rc, 'device_model').asString(),
+      photoUploadEnabled: getValue(rc, 'photo_upload_enabled').asString(),
+    });
     return cached;
   } catch {
     return DEFAULT_THRESHOLDS;

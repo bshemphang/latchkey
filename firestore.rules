@@ -1,8 +1,8 @@
 rules_version = '2';
 
-// Latchkey tracker rules (finalised when the Firestore wiring lands, Nov 21).
-// Each application document belongs to one user: only that signed-in user
-// may read or write it. Until then the app stores the tracker locally.
+// Latchkey tracker rules. Each application document belongs to one user:
+// only that signed-in user may read or write it. The app writes documents
+// with a `uid` field and subscribes with a uid query (see src/store/tracker.ts).
 service cloud.firestore {
   match /databases/{database}/documents {
     match /applications/{docId} {

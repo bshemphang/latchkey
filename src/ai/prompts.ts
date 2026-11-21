@@ -75,7 +75,31 @@ export function parseExtractionJson(
         return { ok: false, error: `Missing required field: ${key}.` };
       }
     }
-    return { ok: true, data: parsed as unknown as JobExtraction };
+    // Coerce each field: a model that returns the wrong types (skills as a
+    // string, remoteEligible as text) must not crash the render.
+    const stringList = (value: unknown): string[] =>
+      Array.isArray(value)
+        ? value.filter((v): v is string => typeof v === 'string')
+        : [];
+    const text = (value: unknown, fallback = 'Not stated'): string =>
+      typeof value === 'string' && value.trim().length > 0 ? value : fallback;
+    return {
+      ok: true,
+      data: {
+        role: text(parsed.role),
+        company: text(parsed.company),
+        mustHaveSkills: stringList(parsed.mustHaveSkills),
+        niceToHaveSkills: stringList(parsed.niceToHaveSkills),
+        salaryHint: text(parsed.salaryHint),
+        location: text(parsed.location),
+        remoteEligible:
+          typeof parsed.remoteEligible === 'boolean'
+            ? parsed.remoteEligible
+            : parsed.remoteEligible === 'true',
+        deadline: text(parsed.deadline),
+        summary: text(parsed.summary, ''),
+      },
+    };
   } catch {
     return { ok: false, error: 'Model response was not valid JSON.' };
   }

@@ -76,7 +76,6 @@ export const SKILL_VOCABULARY = [
   'freshdesk',
   'salesforce',
   'hubspot',
-  'typescript',
   'redux',
   'vite',
   'jest',

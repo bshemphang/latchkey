@@ -15,6 +15,7 @@
 
 import { initializeApp, type FirebaseApp } from 'firebase/app';
 import { getAI, GoogleAIBackend, type AI } from 'firebase/ai';
+import { getFirestore, type Firestore } from 'firebase/firestore';
 
 export interface FirebaseWebConfig {
   apiKey: string;
@@ -67,6 +68,16 @@ export function getFirebaseApp(): FirebaseApp | null {
 }
 
 let ai: AI | null = null;
+
+let db: Firestore | null = null;
+
+/** Lazily create the Firestore client for the tracker. Null until configured. */
+export function getFirestoreDb(): Firestore | null {
+  const firebaseApp = getFirebaseApp();
+  if (!firebaseApp) return null;
+  if (!db) db = getFirestore(firebaseApp);
+  return db;
+}
 
 /**
  * Lazily create the Firebase AI Logic client (Gemini Developer API backend).

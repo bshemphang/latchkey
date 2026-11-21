@@ -2,6 +2,33 @@
 
 Running log of what was built, tested, and verified. Newest first.
 
+## 2026-11-21 — Hermes review fixes (10 findings + minors)
+
+**Review:** `~/workspace/DELIVERABLES/buildhybridai/latchkey-hermes-review.md`. All 10 findings fixed, plus the minors except the 2 s status poll (harmless churn, left as-is).
+
+### What was fixed
+- **#1 HIGH privacy leak:** `HybridEngine.generate()` now enforces cloud opt-in before any profile task (bullets/note/deep/interview/letter) runs in the cloud; without opt-in it throws a friendly "turn on cloud opt-in" error. Decision recorded: the posting itself is public text, so extract/scam may fall back to the cloud; the profile never does without opt-in. Tailor-section copy and chip are now conditional on Nano availability. Tests assert the gate and the posting exception.
+- **#2 HIGH Firestore:** `src/store/tracker.ts` is wired to Firestore (`applications/{id}` docs with `uid`, writes after `ensureSession()`, `onSnapshot` live board in App + Tracker, localStorage as offline cache). `TrackerApplication` carries `uid`. `signInWithGoogle()` uses `linkWithPopup` so the anonymous uid survives the upgrade. `firestore.rules` comment updated; footer/README claims are now true.
+- **#3 HIGH App Check:** `appcheck.ts` tracks state (`ready` / `missing-site-key` / `error`), `console.warn`s instead of swallowing init errors; `EngineStatus` exposes `appCheckReady` / `appCheckMissingKey`; App.tsx shows a banner when configured in prod with no site key; `friendlyError` maps App Check 401/403 to actionable text. **The reCAPTCHA v3 site key itself is still his step.**
+- **#4 badge bug:** `fallback: decision.fallback ?? false`; regression tests for a cloud-preferred task and a real fallback.
+- **#5 validation + ErrorBoundary:** `parseModelResponse` (exported, tested) coerces every field (string arrays, fitScore clamped 0-100, scam level whitelisted else rule-engine fallback); `parseExtractionJson` coerces types; note/letter text is fence-stripped; new `src/ui/ErrorBoundary.tsx` wraps the app in `main.tsx`.
+- **#6 photo-only:** scam check is skipped when there is no posting text and the card says "Scam check needs the posting text"; uploads restricted to JPEG/PNG/WebP, 4 MB cap, friendly errors.
+- **#7 copy:** Nano strip, input subtitle, Tailor subtitle/chip, and the analyse spinner label are conditional on `status.nanoAvailable` and the actual route decision.
+- **#8 Promise.allSettled:** `handleAnalyse` renders whichever of extract/scam succeeded, with per-card error + retry; per-attempt 75 s timeout surfaces the friendly network error.
+- **#9 Remote Config:** `parseThresholds()` guards with `Number.isFinite` and falls back per-field; `photoUploadEnabled` wires to the upload button.
+- **#10 Nano setup:** `ensureDeviceModel()` returns `{ ok, reason }`; the UI shows the reason inline and refreshes status immediately.
+- **Minors:** `daysUntil()` parses deadlines as local calendar days (was off by one in negative-offset timezones); `SKILL_VOCABULARY` deduped; the unreachable `ensureDeviceModel`-inside-`generate` branch removed.
+
+### Verified
+- `npm test`: **56 passed, 0 failed** (33 before + 23 new: opt-in gate 4, fallback badge 2, response validation 6, extraction coercion 1, Remote Config 4, tracker 3, ErrorBoundary 3).
+- `npm run build` (`tsc -b && vite build`): clean.
+- `npx oxlint`: **0 warnings, 0 errors**.
+- Debug-token string in `dist/`: 0 matches. No new em dashes in edited lines.
+
+### Still his steps
+- **reCAPTCHA v3 site key** for the hosted demo (App Check in production). The app now shows a banner and a clear error without it, but the key itself must come from him.
+- Demo video Nov 25 on his laptop (real Chrome 139+ with Nano); Devpost submission Nov 29 (his click).
+
 ## 2026-11-17 ~01:05 IST — Day 2 (Nov 18 schedule, done early): real Firebase AI Logic wiring
 
 **Config landed:** project `latchkey-hybrid-ai`, web config + App Check debug token in `~/workspace/latchkey/.env.local` only (gitignored, never committed). Devpost: registered for #BuildHybridAI 2026 as nic-shemphang (confirmed 2026-11-17 ~00:55 IST).

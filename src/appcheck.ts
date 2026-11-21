@@ -20,6 +20,23 @@ declare global {
 
 let initialised = false;
 
+export type AppCheckState =
+  | 'not-configured'
+  | 'ready'
+  | 'missing-site-key'
+  | 'error';
+
+let appCheckState: AppCheckState = 'not-configured';
+let appCheckError: string | null = null;
+
+/** Current App Check state, for the EngineStatus banner and diagnostics. */
+export function getAppCheckState(): {
+  state: AppCheckState;
+  error: string | null;
+} {
+  return { state: appCheckState, error: appCheckError };
+}
+
 /**
  * The App Check debug token for the dev provider.
  *
@@ -52,13 +69,24 @@ export function initAppCheck(): void {
     const siteKey = import.meta.env.VITE_RECAPTCHA_V3_SITE_KEY as
       | string
       | undefined;
-    if (!siteKey && !import.meta.env.DEV) return;
+    if (!siteKey && !import.meta.env.DEV) {
+      // Production without a site key: App Check silently never starts and
+      // every AI call then fails with a raw 401/403. Say so loudly instead.
+      appCheckState = 'missing-site-key';
+      console.warn(
+        'Latchkey: VITE_RECAPTCHA_V3_SITE_KEY is not set, so App Check is disabled in production and AI calls may be rejected. Add the reCAPTCHA v3 site key to finish setup.',
+      );
+      return;
+    }
     initializeAppCheck(app, {
       provider: new ReCaptchaV3Provider(siteKey ?? 'debug'),
       isTokenAutoRefreshEnabled: true,
     });
     initialised = true;
-  } catch {
-    // App Check is best-effort at startup; AI calls surface real failures.
+    appCheckState = 'ready';
+  } catch (e) {
+    appCheckState = 'error';
+    appCheckError = e instanceof Error ? e.message : String(e ?? '');
+    console.warn('Latchkey: App Check failed to initialise', e);
   }
 }

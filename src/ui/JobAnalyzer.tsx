@@ -7,7 +7,7 @@
  * Every AI result shows its inference badge and latency.
  */
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   AlertTriangle,
   Banknote,
@@ -23,6 +23,7 @@ import {
   ListChecks,
   MapPin,
   MessageSquare,
+  RotateCcw,
   Save,
   Search,
   ShieldAlert,
@@ -31,6 +32,8 @@ import {
   XCircle,
 } from 'lucide-react';
 import { engine } from '../ai/engine';
+import { routeTask } from '../ai/router';
+import { getThresholds } from '../config/remote';
 import type {
   AIResult,
   CandidateProfile,
@@ -56,7 +59,8 @@ type Running = 'analyze' | 'bullets' | 'note' | 'deep' | 'interview' | 'letter' 
 /**
  * Turn SDK errors into something a user can act on. Network failures mean
  * the AI service could not be reached at all (offline, or the browser has
- * no route to it); anything else is shown as the SDK reported it.
+ * no route to it); App Check rejections mean the Firebase setup is
+ * incomplete; anything else is shown as the SDK reported it.
  */
 function friendlyError(e: unknown): string {
   const message =
@@ -64,8 +68,18 @@ function friendlyError(e: unknown): string {
   if (/Failed to fetch|NetworkError|ERR_NETWORK|network request failed/i.test(message)) {
     return "Couldn't reach the AI service. Check your connection and try again.";
   }
+  if (/timed out|took too long/i.test(message)) {
+    return 'The AI service took too long to respond. Check your connection and try again.';
+  }
+  if (/app check/i.test(message) && /\[401|\[403|invalid|rejected/i.test(message)) {
+    return 'App Check rejected this request. The reCAPTCHA site key may be missing or not registered in the Firebase console yet.';
+  }
   return message;
 }
+
+/** Photo uploads: only formats Gemini inlineData accepts, capped at 4 MB. */
+const PHOTO_MIME_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const PHOTO_MAX_BYTES = 4 * 1024 * 1024;
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -109,13 +123,33 @@ export function JobAnalyzer({
   const [letter, setLetter] = useState<AIResult<string> | null>(null);
   const [running, setRunning] = useState<Running>(null);
   const [error, setError] = useState<string | null>(null);
+  const [extractError, setExtractError] = useState<string | null>(null);
+  const [scamError, setScamError] = useState<string | null>(null);
+  /** Photo-only upload: the scam check needs posting text, which a photo has not produced yet. */
+  const [scamUnavailable, setScamUnavailable] = useState(false);
   const [cloudOptIn, setCloudOptIn] = useState(false);
   const [saved, setSaved] = useState(false);
   const [nanoProgress, setNanoProgress] = useState<number | null>(null);
+  const [nanoMessage, setNanoMessage] = useState<string | null>(null);
+  /** Where the current analyse run is actually executing, for the spinner label. */
+  const [analyseRoute, setAnalyseRoute] = useState<'on-device' | 'cloud' | null>(null);
+  /** Remote Config feature flag for photo upload (defaults on). */
+  const [photoEnabled, setPhotoEnabled] = useState(true);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    void getThresholds().then((t) => {
+      if (!cancelled) setPhotoEnabled(t.photoUploadEnabled);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const canAnalyse = (jdText.trim().length >= 20 || imageDataUrl !== null) && running === null;
   const hasExtraction = extraction !== null;
+  const photoOnly = imageDataUrl !== null && jdText.trim().length === 0;
 
   function loadSample(index: number) {
     const sample = SAMPLE_JOBS[index];
@@ -132,11 +166,19 @@ export function JobAnalyzer({
     setLetter(null);
     setSaved(false);
     setError(null);
+    setExtractError(null);
+    setScamError(null);
+    setScamUnavailable(false);
+    setNanoMessage(null);
   }
 
   async function handleImage(file: File) {
-    if (!file.type.startsWith('image/')) {
-      setError('Please upload a JPEG or PNG photo of the job posting.');
+    if (!PHOTO_MIME_TYPES.includes(file.type)) {
+      setError('Please upload a JPEG, PNG, or WebP photo of the job posting.');
+      return;
+    }
+    if (file.size > PHOTO_MAX_BYTES) {
+      setError('That photo is over 4 MB. Please use a smaller photo.');
       return;
     }
     const reader = new FileReader();
@@ -150,22 +192,99 @@ export function JobAnalyzer({
 
   async function handleAnalyse() {
     setError(null);
+    setExtractError(null);
+    setScamError(null);
+    setScamUnavailable(false);
     setRunning('analyze');
     setSaved(false);
+    // A new run supersedes the previous results; clear them upfront so a
+    // failed extraction never leaves stale bullets/notes on screen.
+    setBullets(null);
+    setNote(null);
+    setDeep(null);
+    setInterview(null);
+    setLetter(null);
+    // Derive the spinner label from the actual route decision for the
+    // extraction task, so it never claims "on-device" while a cloud call runs.
     try {
-      const [ex, sc] = await Promise.all([
-        engine.generate<JobExtraction>('extract', { jdText, imageDataUrl: imageDataUrl ?? undefined }),
-        engine.generate<ScamVerdict>('scam', { jdText }),
-      ]);
-      setExtraction(ex);
-      setScam(sc);
-      setBullets(null);
-      setNote(null);
-      setDeep(null);
-      setInterview(null);
-      setLetter(null);
+      const thresholds = await getThresholds();
+      const decision = routeTask('extract', {
+        nanoAvailable: status.nanoAvailable ?? false,
+        online: status.online,
+        jdLength: jdText.length,
+        thresholds,
+      });
+      setAnalyseRoute(decision.mode);
+    } catch {
+      setAnalyseRoute(null);
+    }
+    try {
+      if (photoOnly) {
+        // A photo has no posting text yet: run extraction only. The scam
+        // check needs the text, so it waits instead of green-lighting
+        // an empty posting.
+        const ex = await engine.generate<JobExtraction>('extract', {
+          jdText,
+          imageDataUrl: imageDataUrl ?? undefined,
+        });
+        setExtraction(ex);
+        setScam(null);
+        setScamUnavailable(true);
+      } else {
+        // One task failing must not throw away the other's success.
+        const [ex, sc] = await Promise.allSettled([
+          engine.generate<JobExtraction>('extract', { jdText, imageDataUrl: imageDataUrl ?? undefined }),
+          engine.generate<ScamVerdict>('scam', { jdText }),
+        ]);
+        if (ex.status === 'fulfilled') {
+          setExtraction(ex.value);
+        } else {
+          setExtractError(friendlyError(ex.reason));
+        }
+        if (sc.status === 'fulfilled') {
+          setScam(sc.value);
+        } else {
+          setScamError(friendlyError(sc.reason));
+        }
+        if (ex.status === 'rejected' && sc.status === 'rejected') {
+          setError(friendlyError(ex.reason));
+        }
+      }
     } catch (e) {
       setError(friendlyError(e));
+    } finally {
+      setRunning(null);
+      setAnalyseRoute(null);
+      refresh();
+    }
+  }
+
+  async function retryExtract() {
+    setExtractError(null);
+    setRunning('analyze');
+    try {
+      const ex = await engine.generate<JobExtraction>('extract', {
+        jdText,
+        imageDataUrl: imageDataUrl ?? undefined,
+      });
+      setExtraction(ex);
+    } catch (e) {
+      setExtractError(friendlyError(e));
+    } finally {
+      setRunning(null);
+      refresh();
+    }
+  }
+
+  async function retryScam() {
+    if (!jdText.trim()) return;
+    setScamError(null);
+    setRunning('analyze');
+    try {
+      const sc = await engine.generate<ScamVerdict>('scam', { jdText });
+      setScam(sc);
+    } catch (e) {
+      setScamError(friendlyError(e));
     } finally {
       setRunning(null);
       refresh();
@@ -197,8 +316,16 @@ export function JobAnalyzer({
 
   async function handleNanoSetup() {
     setNanoProgress(0);
-    await engine.ensureDeviceModel((p) => setNanoProgress(p));
+    setNanoMessage(null);
+    const result = await engine.ensureDeviceModel((p) => setNanoProgress(p));
     setNanoProgress(null);
+    if (result.ok) {
+      setNanoMessage('On-device AI is ready.');
+    } else {
+      setNanoMessage(
+        `Gemini Nano could not be set up: ${result.reason ?? 'not available on this device.'} Cloud fallback is active.`,
+      );
+    }
     refresh();
   }
 
@@ -230,9 +357,14 @@ export function JobAnalyzer({
             </p>
             <p className="text-sm text-stone-500">
               {status.configured
-                ? 'Gemini Nano runs in Chrome on this device. Your profile and the posting never leave the device for on-device tasks.'
+                ? status.nanoAvailable
+                  ? 'Gemini Nano runs in Chrome on this device. Your profile and the posting never leave the device for on-device tasks.'
+                  : 'Gemini Nano is not set up on this device yet, so tasks run in the cloud with a visible badge. Profile tasks stay blocked until you allow cloud use.'
                 : 'Demo mode: Nano is simulated until the Firebase project is connected. The routing and badges work the same way.'}
             </p>
+            {nanoMessage && (
+              <p className="mt-1 text-sm text-stone-600">{nanoMessage}</p>
+            )}
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
@@ -261,7 +393,11 @@ export function JobAnalyzer({
       <Card className="p-5">
         <SectionHeading
           title="Paste a job posting"
-          subtitle="Or upload a photo of one. Extraction and the scam check run on your device, so the posting text never leaves it."
+          subtitle={
+            status.nanoAvailable
+              ? 'Or upload a photo of one. Extraction and the scam check run on your device, so the posting text never leaves it.'
+              : 'Or upload a photo of one. Extraction and the scam check run on-device once Nano is set up; until then they run in the cloud and the badge says so.'
+          }
         />
         <div className="mb-3 flex flex-wrap gap-2">
           {SAMPLE_JOBS.map((s, i) => (
@@ -286,16 +422,22 @@ export function JobAnalyzer({
           <input
             ref={fileRef}
             type="file"
-            accept="image/jpeg,image/png"
+            accept="image/jpeg,image/png,image/webp"
             className="hidden"
             onChange={(e) => {
               const f = e.target.files?.[0];
               if (f) void handleImage(f);
             }}
           />
-          <GhostButton onClick={() => fileRef.current?.click()}>
+          <GhostButton
+            onClick={() => fileRef.current?.click()}
+            disabled={!photoEnabled}
+          >
             <ImagePlus className="h-4 w-4" /> Upload a photo
           </GhostButton>
+          {!photoEnabled && (
+            <span className="text-xs text-stone-500">Photo upload is off.</span>
+          )}
           {imageName && (
             <span className="text-xs font-medium text-stone-500">
               {imageName} attached
@@ -305,7 +447,10 @@ export function JobAnalyzer({
           <PrimaryButton onClick={handleAnalyse} disabled={!canAnalyse}>
             {running === 'analyze' ? (
               <>
-                <Spinner /> Analysing on-device...
+                <Spinner />{' '}
+                {analyseRoute === 'cloud'
+                  ? 'Analysing in the cloud...'
+                  : 'Analysing on-device...'}
               </>
             ) : (
               <>
@@ -331,8 +476,9 @@ export function JobAnalyzer({
       </Card>
 
       {/* Extraction + scam */}
-      {hasExtraction && extraction && scam && (
+      {(hasExtraction || extractError || scamError || scamUnavailable) && (
         <div className="grid gap-6 lg:grid-cols-2">
+          {extraction ? (
           <Card className="p-5">
             <div className="mb-3 flex items-start justify-between gap-2">
               <SectionHeading title="What the posting says" />
@@ -370,10 +516,29 @@ export function JobAnalyzer({
               </PrimaryButton>
             </div>
           </Card>
+          ) : (
+          <Card className="p-5">
+            <SectionHeading title="What the posting says" />
+            <p className="text-sm text-red-700">{extractError}</p>
+            <div className="mt-3">
+              <GhostButton onClick={() => void retryExtract()} disabled={running !== null}>
+                <RotateCcw className="h-4 w-4" /> Retry extraction
+              </GhostButton>
+            </div>
+          </Card>
+          )}
 
+          {scam ? (
           <Card className="p-5">
             <div className="mb-3 flex items-start justify-between gap-2">
-              <SectionHeading title="Scam check" subtitle="Runs on-device, instantly." />
+              <SectionHeading
+                title="Scam check"
+                subtitle={
+                  scam.source === 'on-device' || scam.source === 'mock-on-device'
+                    ? 'Runs on-device, instantly.'
+                    : 'Ran in the cloud.'
+                }
+              />
               <SourceBadge source={scam.source} latencyMs={scam.latencyMs} fallback={scam.fallback} />
             </div>
             <div
@@ -414,6 +579,24 @@ export function JobAnalyzer({
               </ul>
             )}
           </Card>
+          ) : scamError ? (
+          <Card className="p-5">
+            <SectionHeading title="Scam check" />
+            <p className="text-sm text-red-700">{scamError}</p>
+            <div className="mt-3">
+              <GhostButton onClick={() => void retryScam()} disabled={running !== null}>
+                <RotateCcw className="h-4 w-4" /> Retry scam check
+              </GhostButton>
+            </div>
+          </Card>
+          ) : scamUnavailable ? (
+          <Card className="p-5">
+            <SectionHeading title="Scam check" />
+            <p className="text-sm text-stone-600">
+              Scam check needs the posting text. Paste the posting text to run it.
+            </p>
+          </Card>
+          ) : null}
         </div>
       )}
 
@@ -423,11 +606,21 @@ export function JobAnalyzer({
           <div className="mb-3 flex items-start justify-between gap-2">
             <SectionHeading
               title="Tailor my application"
-              subtitle="Built on-device from your stored profile. Your profile never leaves this device for these."
+              subtitle={
+                status.nanoAvailable
+                  ? 'Built on-device from your stored profile. Your profile never leaves this device for these.'
+                  : 'Built from your stored profile. On-device AI is not set up, so these run in the cloud only if you allow it in the cloud section below, and stay blocked otherwise.'
+              }
             />
-            <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
-              <Cpu className="h-3.5 w-3.5" /> On-device
-            </span>
+            {status.nanoAvailable ? (
+              <span className="inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2.5 py-1 text-xs font-semibold text-emerald-800">
+                <Cpu className="h-3.5 w-3.5" /> On-device
+              </span>
+            ) : (
+              <span className="inline-flex items-center gap-1 rounded-full bg-sky-100 px-2.5 py-1 text-xs font-semibold text-sky-800">
+                <Cloud className="h-3.5 w-3.5" /> Cloud, opt-in only
+              </span>
+            )}
           </div>
           <div className="flex flex-wrap gap-2">
             <PrimaryButton

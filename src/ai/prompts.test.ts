@@ -37,6 +37,29 @@ describe('parseExtractionJson', () => {
     expect(parseExtractionJson('not json at all').ok).toBe(false);
     expect(parseExtractionJson('{"role": "X"}').ok).toBe(false);
   });
+
+  it('coerces wrong-typed fields instead of crashing the render', () => {
+    const parsed = parseExtractionJson(
+      JSON.stringify({
+        role: 42,
+        company: 'Northwind',
+        mustHaveSkills: 'communication',
+        niceToHaveSkills: ['email', 7, null],
+        salaryHint: 'Not stated',
+        location: 'Remote',
+        remoteEligible: 'true',
+        deadline: 'Not stated',
+        summary: 'S.',
+      }),
+    );
+    expect(parsed.ok).toBe(true);
+    if (parsed.ok) {
+      expect(parsed.data.role).toBe('Not stated');
+      expect(parsed.data.mustHaveSkills).toEqual([]);
+      expect(parsed.data.niceToHaveSkills).toEqual(['email']);
+      expect(parsed.data.remoteEligible).toBe(true);
+    }
+  });
 });
 
 describe('prompt builders', () => {

@@ -4,12 +4,13 @@
  * Persists locally today; the store interface is shaped for Firestore.
  */
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { CalendarDays, ShieldCheck, ShieldAlert, Trash2, XCircle } from 'lucide-react';
 import {
   daysUntil,
   loadApplications,
   removeApplication,
+  subscribeApplications,
   TRACKER_STATUSES,
   updateApplication,
   type TrackerStatus,
@@ -42,6 +43,10 @@ function ScamDot({ level }: { level: ScamLevel }) {
 export function Tracker({ refreshKey }: { refreshKey: number }) {
   const [apps, setApps] = useState(() => loadApplications());
   const [notesDraft, setNotesDraft] = useState<Record<string, string>>({});
+
+  // Live board: Firestore pushes remote changes (and App.tsx bumps the
+  // refresh key on saves). No-op subscription in demo mode.
+  useEffect(() => subscribeApplications(setApps), []);
 
   // Reload when the parent signals a save happened elsewhere.
   const [lastKey, setLastKey] = useState(refreshKey);
@@ -77,7 +82,7 @@ export function Tracker({ refreshKey }: { refreshKey: number }) {
       <Card className="p-5">
         <SectionHeading
           title="Your applications"
-          subtitle="Saved jobs move through Saved, Applied, Interview, Offer, or Rejected. Deadlines are shown so nothing slips."
+          subtitle="Saved jobs move through Saved, Applied, Interview, Offer, or Rejected. Deadlines are shown so nothing slips. Signed in, the board syncs across devices."
         />
         {apps.length === 0 && (
           <p className="rounded-xl bg-stone-50 p-4 text-sm text-stone-500">

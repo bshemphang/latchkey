@@ -7,7 +7,7 @@
  * and everything stays on-device.
  */
 
-import { getAuth, signInAnonymously, signInWithPopup, GoogleAuthProvider, type User } from 'firebase/auth';
+import { getAuth, signInAnonymously, linkWithPopup, GoogleAuthProvider, type User } from 'firebase/auth';
 import { getFirebaseApp, isFirebaseConfigured } from './config/firebase';
 
 export interface Session {
@@ -32,6 +32,15 @@ function localUid(): string {
 }
 
 let session: Session | null = null;
+
+/**
+ * The uid of the current session, synchronously. Falls back to the stable
+ * local id when no session exists yet (demo mode). Used to tag tracker
+ * documents before the async session is ready.
+ */
+export function currentUid(): string {
+  return session?.uid ?? localUid();
+}
 
 function toSession(user: User): Session {
   return {
@@ -64,12 +73,24 @@ export async function ensureSession(): Promise<Session> {
   return session;
 }
 
-/** Upgrade the anonymous session with Google sign-in (optional). */
+/**
+ * Upgrade the anonymous session with Google sign-in (optional). Uses
+ * linkWithPopup so the Google credential is linked to the SAME anonymous
+ * account: the uid (and every tracker document owned by it) survives the
+ * upgrade instead of being discarded for a fresh uid.
+ */
 export async function signInWithGoogle(): Promise<Session> {
   const app = getFirebaseApp();
   if (!app) throw new Error('Firebase is not configured.');
   const auth = getAuth(app);
-  const cred = await signInWithPopup(auth, new GoogleAuthProvider());
+  const user = auth.currentUser;
+  if (!user) {
+    // No anonymous session to upgrade; fall back to a fresh sign-in.
+    const cred = await signInAnonymously(auth);
+    session = toSession(cred.user);
+    return session;
+  }
+  const cred = await linkWithPopup(user, new GoogleAuthProvider());
   session = toSession(cred.user);
   return session;
 }

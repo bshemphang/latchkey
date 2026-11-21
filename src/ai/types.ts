@@ -92,6 +92,8 @@ export interface CandidateProfile {
 
 export interface TrackerApplication {
   id: string;
+  /** Firebase uid that owns this document (Firestore rules enforce it). */
+  uid: string;
   role: string;
   company: string;
   status: 'saved' | 'applied' | 'interview' | 'offer' | 'rejected';
